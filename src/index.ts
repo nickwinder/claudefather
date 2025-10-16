@@ -19,11 +19,9 @@ program
   .command('start')
   .description('Start the supervisor and process all tasks')
   .option('--project-dir <dir>', 'Target project directory where Claude will work', '.')
-  .option('--tasks-dir <dir>', 'Directory containing task files (relative to project-dir)', 'tasks')
-  .option('--supervisor-dir <dir>', 'Directory for supervisor state (relative to project-dir)', '.claudefather')
   .action(async (options) => {
     try {
-      const supervisor = new AISupervisor(options.projectDir, options.tasksDir, options.supervisorDir);
+      const supervisor = new AISupervisor(options.projectDir);
       await supervisor.run();
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
@@ -38,11 +36,9 @@ program
   .command('status')
   .description('Show status of all tasks')
   .option('--project-dir <dir>', 'Target project directory', '.')
-  .option('--tasks-dir <dir>', 'Directory containing task files (relative to project-dir)', 'tasks')
-  .option('--supervisor-dir <dir>', 'Directory for supervisor state (relative to project-dir)', '.claudefather')
   .action(async (options) => {
     try {
-      const supervisor = new AISupervisor(options.projectDir, options.tasksDir, options.supervisorDir);
+      const supervisor = new AISupervisor(options.projectDir);
       await supervisor.getStatus();
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
@@ -57,13 +53,11 @@ program
   .command('create <description>')
   .description('Create a new task file')
   .option('--project-dir <dir>', 'Target project directory', '.')
-  .option('--tasks-dir <dir>', 'Directory to create task in (relative to project-dir)', 'tasks')
   .action(async (description, options) => {
     try {
       const { resolve } = await import('path');
-      const projectDir = options.projectDir;
-      const tasksDir = resolve(projectDir, options.tasksDir);
-      const taskLoader = new TaskLoader(tasksDir);
+      const projectDir = resolve(options.projectDir);
+      const taskLoader = new TaskLoader(projectDir);
 
       // Get next task number
       const tasks = await taskLoader.loadTasks();
@@ -81,7 +75,7 @@ program
         .substring(0, 50);
 
       const taskId = `${nextNum}-${slug}`;
-      const taskFile = join(tasksDir, `${taskId}.md`);
+      const taskFile = join(projectDir, '.claudefather', 'tasks', `${taskId}.md`);
 
       const content = `# ${description}
 
@@ -110,16 +104,15 @@ program
   .command('reset [taskId]')
   .description('Reset a task to pending state')
   .option('--project-dir <dir>', 'Target project directory', '.')
-  .option('--tasks-dir <dir>', 'Directory containing task files (relative to project-dir)', 'tasks')
-  .option('--supervisor-dir <dir>', 'Directory for supervisor state (relative to project-dir)', '.claudefather')
+  .option('--all', 'Reset all tasks')
   .action(async (taskId, options) => {
     try {
-      const supervisor = new AISupervisor(options.projectDir, options.tasksDir, options.supervisorDir);
+      const { resolve } = await import('path');
+      const projectDir = resolve(options.projectDir);
+      const supervisor = new AISupervisor(projectDir);
 
       if (options.all) {
-        const { resolve } = await import('path');
-        const tasksDir = resolve(options.projectDir, options.tasksDir);
-        const taskLoader = new TaskLoader(tasksDir);
+        const taskLoader = new TaskLoader(projectDir);
         const tasks = await taskLoader.loadTasks();
         for (const task of tasks) {
           await supervisor.resetTask(task.id);
@@ -147,12 +140,11 @@ program
   .option('-f, --follow', 'Follow log in real-time (like tail -f)')
   .option('-n, --lines <num>', 'Show last N lines', '50')
   .option('--project-dir <dir>', 'Target project directory', '.')
-  .option('--supervisor-dir <dir>', 'Directory for supervisor state (relative to project-dir)', '.claudefather')
   .action(async (options) => {
     try {
       const { resolve } = await import('path');
-      const supervisorDir = resolve(options.projectDir, options.supervisorDir);
-      const logsDir = join(supervisorDir, 'logs');
+      const projectDir = resolve(options.projectDir);
+      const logsDir = join(projectDir, '.claudefather', 'logs');
 
       let logPath: string;
 

@@ -4,15 +4,16 @@ import { TaskState } from './types';
 import { TaskStateSchema } from './schemas';
 
 /**
- * Manages task state persistence
+ * Manages task state persistence in .claudefather directory
  */
 export class StateManager {
   private stateDir: string;
   private logsDir: string;
 
-  constructor(supervisorDir: string = '.claudefather') {
-    this.stateDir = join(supervisorDir, 'state');
-    this.logsDir = join(supervisorDir, 'logs');
+  constructor(projectDir: string = '.') {
+    const claudefatherDir = join(projectDir, '.claudefather');
+    this.stateDir = join(claudefatherDir, 'state');
+    this.logsDir = join(claudefatherDir, 'logs');
   }
 
   /**

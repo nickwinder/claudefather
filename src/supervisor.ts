@@ -17,13 +17,12 @@ export class AISupervisor {
   private claudeRunner: ClaudeRunner
   private promptBuilder: PromptBuilder
 
-  constructor(projectDir: string = '.', tasksDir: string = 'tasks', supervisorDir: string = '.claudefather') {
-    const resolvedTasksDir = resolve(projectDir, tasksDir)
-    const resolvedSupervisorDir = resolve(projectDir, supervisorDir)
-    this.taskLoader = new TaskLoader(resolvedTasksDir)
-    this.stateManager = new StateManager(resolvedSupervisorDir)
-    this.claudeRunner = new ClaudeRunner(this.stateManager, projectDir)
-    this.promptBuilder = new PromptBuilder()
+  constructor(projectDir: string = '.') {
+    const resolvedProjectDir = resolve(projectDir)
+    this.taskLoader = new TaskLoader(resolvedProjectDir)
+    this.stateManager = new StateManager(resolvedProjectDir)
+    this.claudeRunner = new ClaudeRunner(this.stateManager, resolvedProjectDir)
+    this.promptBuilder = new PromptBuilder(resolvedProjectDir)
   }
 
   /**

@@ -4,10 +4,14 @@ import matter from 'gray-matter';
 import { Task } from './types';
 
 /**
- * Loads tasks from markdown files in the tasks directory
+ * Loads tasks from markdown files in .claudefather/tasks directory
  */
 export class TaskLoader {
-  constructor(private taskDir: string = 'tasks') {}
+  private taskDir: string;
+
+  constructor(projectDir: string = '.') {
+    this.taskDir = join(projectDir, '.claudefather', 'tasks');
+  }
 
   /**
    * Load all tasks from the tasks directory, sorted by filename

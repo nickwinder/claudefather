@@ -8,7 +8,8 @@ import { Task, TaskState, ValidationResult } from './types';
 export class PromptBuilder {
   private systemPromptPath: string;
 
-  constructor(templatesDir: string = 'templates') {
+  constructor(projectDir: string = '.') {
+    const templatesDir = join(projectDir, '.claudefather', 'templates');
     this.systemPromptPath = join(templatesDir, 'system-prompt.md');
   }
 

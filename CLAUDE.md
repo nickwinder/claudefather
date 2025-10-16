@@ -48,7 +48,7 @@ pnpm claudefather create "Task" --project-dir /path/to/project
 ### High-Level Flow
 
 ```
-Task Files (.md)
+Task Files (.claudefather/tasks/.md)
     ↓
 TaskLoader (parses front matter)
     ↓
@@ -60,17 +60,18 @@ Supervisor (main orchestrator)
     ↓
 State Files (.claudefather/state/*.json)
 Logs (.claudefather/logs/*.log)
+Templates (.claudefather/templates/*.md)
 ```
 
 ### Key Modules
 
-1. **TaskLoader** (`src/task-loader.ts`) - Reads markdown files from `tasks/` directory, parses YAML front matter for metadata, extracts task content. Sorts tasks numerically by ID (e.g., `001-`, `002-`).
+1. **TaskLoader** (`src/task-loader.ts`) - Reads markdown files from `.claudefather/tasks/` directory, parses YAML front matter for metadata, extracts task content. Sorts tasks numerically by ID (e.g., `001-`, `002-`).
 
 2. **StateManager** (`src/state-manager.ts`) - Persists task state to `.claudefather/state/{task-id}.json`. Loads previous execution state to resume or retry. Handles state validation with Zod schemas.
 
 3. **ClaudeRunner** (`src/claude-runner.ts`) - Spawns Claude Code CLI as a subprocess with 1-hour timeout. Passes prompt via stdin. Captures full stdout/stderr output. Handles process cleanup.
 
-4. **PromptBuilder** (`src/prompt-builder.ts`) - Constructs the prompt sent to Claude, including system instructions from `templates/system-prompt.md`, the task description, and retry feedback from previous attempts if validation failed.
+4. **PromptBuilder** (`src/prompt-builder.ts`) - Constructs the prompt sent to Claude, including system instructions from `.claudefather/templates/system-prompt.md`, the task description, and retry feedback from previous attempts if validation failed.
 
 5. **OutputValidator** (`src/validators.ts`) - Validates Claude's output state file by checking for hallucinations. Pattern-matches for real command outputs: test framework markers (✓, FAIL, PASS), file paths, exit codes, timing info. Returns specific validation issues that are fed back to Claude on retry.
 
@@ -104,7 +105,7 @@ The validator checks for these signals of real command execution:
 
 ## Task File Format
 
-Tasks are markdown files in `tasks/` directory named `{number}-{slug}.md`:
+Tasks are markdown files in `.claudefather/tasks/` directory named `{number}-{slug}.md`:
 
 ```markdown
 # Task Title
@@ -152,38 +153,48 @@ Claude writes `.claudefather/state/{task-id}.json` with this schema (defined in 
 }
 ```
 
-See `templates/system-prompt.md` for detailed requirements Claude must follow when writing state files.
+See `.claudefather/templates/system-prompt.md` for detailed requirements Claude must follow when writing state files.
 
 ## Configuration
 
-### Directories
+### Directory Structure
 
-- **Project Directory**: `.` (configurable via `--project-dir` flag) - The target project where Claude works. All paths are resolved relative to this directory.
-- **Task Directory**: `tasks/` (configurable via `--tasks-dir` flag) - Relative to project-dir. Contains markdown task files.
-- **State Directory**: `.claudefather/` (configurable via `--supervisor-dir` flag, gitignored) - Relative to project-dir. Contains task state files and logs.
+All directories are encapsulated under `.claudefather/` (gitignored):
 
-### Path Resolution
+```
+project-dir/
+└── .claudefather/               # All supervisor working directories (gitignored)
+    ├── tasks/                   # Task markdown files (e.g., 001-task.md)
+    ├── state/                   # Task state JSON files
+    ├── logs/                    # Task execution logs
+    └── templates/               # System prompt templates
+```
 
-All paths are resolved relative to `--project-dir`:
+### Fixed Paths
+
+- **Project Directory**: Configurable via `--project-dir` flag, defaults to `.`
+- **Task Directory**: Always `{project-dir}/.claudefather/tasks/` - Contains markdown task files
+- **State Directory**: Always `{project-dir}/.claudefather/state/` - Task state files
+- **Logs Directory**: Always `{project-dir}/.claudefather/logs/` - Execution logs
+- **Templates Directory**: Always `{project-dir}/.claudefather/templates/` - System prompts
+
+### Usage
 
 ```bash
 # Default: uses current directory as project
 pnpm claudefather start
 
-# Specify different project
+# Specify a different project directory
 pnpm claudefather start --project-dir /path/to/project
 
-# Customize task/state locations
-pnpm claudefather start --project-dir /path/to/project \
-  --tasks-dir ./tasks \
-  --supervisor-dir ./.supervisor
+# Other commands also support --project-dir
+pnpm claudefather status --project-dir /path/to/project
+pnpm claudefather create "Task" --project-dir /path/to/project
 ```
 
-### State Files & Logs
+### Working Directory
 
-- **State Files**: `{project-dir}/.claudefather/state/{task-id}.json`
-- **Logs**: `{project-dir}/.claudefather/logs/{task-id}.log`
-- **Claude Working Directory**: When Claude runs, its `cwd` is set to `{project-dir}` so all file operations happen there
+When Claude Code runs, its working directory (`cwd`) is set to `{project-dir}` so all file operations happen in the correct context.
 
 ## TypeScript Configuration
 

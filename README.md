@@ -1,17 +1,62 @@
 # Claudefather
 
-A lightweight CLI tool that orchestrates Claude Code sessions to autonomously complete tasks from markdown files. Claudefather manages task queues, validates outputs, and handles retries with intelligent feedback.
+A lightweight CLI tool that orchestrates Claude sessions to autonomously complete tasks from markdown files. Built on the **Claude Agents SDK**, Claudefather manages task queues, validates outputs to detect hallucinations, and handles intelligent retries with feedback—all via API calls. Works seamlessly with Claude Code CLI authentication or direct API keys.
 
 ## Features
 
-✅ **Autonomous Task Execution** - Claude Code works independently on tasks without interruption
+✅ **Autonomous Task Execution** - Claude works independently on tasks without interruption via API
 ✅ **Output Validation** - Detects hallucinations by validating test/build/lint outputs
 ✅ **Intelligent Retries** - Retries with feedback when validation fails (max 3 attempts)
 ✅ **State Persistence** - Tracks progress across restarts
 ✅ **Blocker Detection** - Stops at human intervention points
 ✅ **Full Logging** - Captures all activity for debugging
 
+## Installation
+
+### Prerequisites
+
+- **Node.js** 18+ and pnpm
+- **Authentication** - Choose one of the following:
+
+  **Option A: Claude Code CLI (Recommended)**
+  - Install Claude Code CLI from [claude.ai/code](https://claude.ai/code)
+  - Run `claude login` to authenticate
+  - Claudefather automatically uses your Claude Code credentials via `~/.claude/settings.json`
+
+  **Option B: Direct API Key**
+  - Get an API key from [console.anthropic.com](https://console.anthropic.com)
+  - Set the `ANTHROPIC_API_KEY` environment variable:
+    ```bash
+    export ANTHROPIC_API_KEY="your-api-key-here"
+    ```
+
+### Install Claudefather
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/claudefather.git
+cd claudefather
+
+# Install dependencies
+pnpm install
+
+# Build
+pnpm build
+```
+
 ## Quick Start
+
+### Authenticate First
+
+Before running Claudefather, ensure you're authenticated:
+
+```bash
+# Option A: Using Claude Code CLI (Recommended)
+claude login
+
+# Option B: Using direct API key
+export ANTHROPIC_API_KEY="your-api-key-here"
+```
 
 ### Usage
 
@@ -44,7 +89,7 @@ pnpm build
 # Create a task
 pnpm claudefather create "Implement user authentication"
 
-# This creates: tasks/001-implement-user-authentication.md
+# This creates: .claudefather/tasks/001-implement-user-authentication.md
 # Edit the file with task details
 ```
 
@@ -63,7 +108,7 @@ pnpm claudefather reset 001-implement-user-authentication
 
 ## Task Format
 
-Tasks are markdown files in the `tasks/` directory:
+Tasks are markdown files in the `.claudefather/tasks/` directory:
 
 ```markdown
 # Implement User Authentication
@@ -85,45 +130,50 @@ Ensure:
 - Branch not pushed to remote
 ```
 
-See `tasks/README.md` for more details.
+See `.claudefather/tasks/README.md` for task writing guidelines (created automatically when you run `pnpm claudefather create`).
 
 ## How It Works
 
 ### Architecture
 
 ```
-┌─────────────────────┐
-│  Task Queue         │  (tasks/*.md)
-└──────────┬──────────┘
-           │
-┌──────────▼──────────┐
-│  Supervisor         │
-│  - Loads tasks      │
-│  - Manages retries  │
-│  - Validates output │
-└──────────┬──────────┘
-           │
-┌──────────▼──────────┐
-│  Claude Code CLI    │  (autonomous)
-│  - Implements task  │
-│  - Runs tests/build │
-│  - Writes state     │
-└──────────┬──────────┘
-           │
-┌──────────▼──────────┐
-│  State & Logs       │  (.claudefather/)
-│  - state/{id}.json  │
-│  - logs/{id}.log    │
-└─────────────────────┘
+┌─────────────────────────────────┐
+│  Task Queue                     │
+│  (.claudefather/tasks/*.md)     │
+└────────────┬────────────────────┘
+             │
+┌────────────▼────────────────────┐
+│  Supervisor (Claudefather)      │
+│  - Loads tasks                  │
+│  - Builds prompts               │
+│  - Manages retries              │
+│  - Validates outputs            │
+└────────────┬────────────────────┘
+             │
+┌────────────▼────────────────────┐
+│  Claude Agents SDK              │
+│  - Makes API calls to Claude    │
+│  - Executes autonomously        │
+│  - Implements task              │
+│  - Runs tests/build/lint        │
+│  - Writes state file            │
+└────────────┬────────────────────┘
+             │
+┌────────────▼────────────────────┐
+│  State & Logs                   │
+│  (.claudefather/)               │
+│  - state/{id}.json              │
+│  - logs/{id}.log                │
+└─────────────────────────────────┘
 ```
 
 ### Execution Flow
 
-1. **Load Tasks**: Reads markdown files from `tasks/` directory (sorted numerically)
+1. **Load Tasks**: Reads markdown files from `.claudefather/tasks/` directory (sorted numerically)
 2. **Check State**: Loads any previous state for the task
 3. **Build Prompt**: Creates prompt with system instructions + task + retry feedback
-4. **Spawn Claude**: Runs `claude -p <prompt>` (autonomous, 1-hour timeout)
-5. **Read State**: Reads state file Claude wrote
+4. **Spawn Claude**: Uses Claude Agents SDK to execute task via API (1-hour timeout)
+5. **Read State**: Reads state file Claude wrote at `.claudefather/state/{task-id}.json`
 6. **Validate**: Checks if outputs look real (pattern matching for hallucinations)
 7. **Handle Result**:
    - ✅ Valid → Mark complete, move to next task
@@ -243,7 +293,7 @@ Create a new task:
 ```bash
 pnpm claudefather create "Implement user authentication"
 
-# Creates: tasks/001-implement-user-authentication.md
+# Creates: .claudefather/tasks/001-implement-user-authentication.md
 ```
 
 ### reset
@@ -318,27 +368,74 @@ Please address these issues and try again.
 ## Files and Directories
 
 ```
-├── src/
+├── src/                      # Source code (TypeScript)
 │   ├── index.ts              # CLI entry point
 │   ├── supervisor.ts         # Main orchestration
 │   ├── task-loader.ts        # Load tasks from markdown
 │   ├── state-manager.ts      # Persist state to JSON
-│   ├── claude-runner.ts      # Spawn Claude Code CLI
+│   ├── claude-runner.ts      # Execute Claude via Agents SDK
 │   ├── prompt-builder.ts     # Build prompts with context
 │   ├── validators.ts         # Validate outputs
 │   ├── schemas.ts            # Zod schemas
 │   └── types.ts              # TypeScript types
-├── templates/
-│   └── system-prompt.md      # System instructions for Claude
-├── tasks/
-│   └── README.md             # Task creation guide
-├── .claudefather/           # State (gitignored)
-│   ├── state/                # Per-task state files
+├── .claudefather/            # Working directory (gitignored)
+│   ├── tasks/                # Task markdown files
+│   ├── templates/            # System prompt templates
+│   ├── state/                # Per-task state JSON files
 │   └── logs/                 # Full session logs
 ├── package.json
 ├── tsconfig.json
+├── CLAUDE.md                 # Project instructions for Claude
 └── README.md
 ```
+
+**Note**: When using `--project-dir`, the `.claudefather/` directory is created in the specified project directory.
+
+## Key Technologies
+
+Claudefather is built with:
+
+- **[@anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)** - Official SDK for programmatic Claude execution via API
+- **TypeScript** - Full type safety with strict mode enabled
+- **Zod** - Runtime schema validation for state files
+- **Commander** - CLI argument parsing and command structure
+- **Execa** - Enhanced child process execution
+- **Chalk** - Terminal output formatting and colors
+
+## Authentication & Settings
+
+Claudefather leverages the Claude Agents SDK's flexible authentication system:
+
+### How Authentication Works
+
+The SDK checks for credentials in this order:
+
+1. **User Settings** - `~/.claude/settings.json` (created by `claude login`)
+2. **Local Settings** - `.claude/settings.local.json` (project-specific overrides)
+3. **Project Settings** - `.claude/settings.json` (checked into version control)
+4. **Environment Variable** - `ANTHROPIC_API_KEY` (fallback)
+
+This is configured via:
+```typescript
+settingSources: ['user', 'local', 'project']
+```
+
+### Recommended Setup
+
+**For Development:**
+- Use `claude login` to authenticate once
+- Credentials are stored in `~/.claude/settings.json`
+- Works automatically for all Claudefather projects
+
+**For CI/CD:**
+- Set `ANTHROPIC_API_KEY` environment variable in your CI system
+- Don't commit credentials to version control
+- Consider using secret management tools
+
+**For Teams:**
+- Each developer runs `claude login` individually
+- API keys are never committed to the repository
+- Consistent experience across team members
 
 ## Logging and Debugging
 
@@ -363,7 +460,7 @@ cat .claudefather/state/001-auth.json | jq .
 Quick overview of all tasks:
 
 ```bash
-pnpm ai-supervisor status
+pnpm claudefather status
 ```
 
 ## Best Practices
@@ -376,12 +473,12 @@ pnpm ai-supervisor status
 4. **Reference Code**: Link to similar patterns in repo
 5. **Acceptance Criteria**: Define what "done" means
 
-### Running Supervisor
+### Running Claudefather
 
-1. **Check Status First**: `pnpm ai-supervisor status`
+1. **Check Status First**: `pnpm claudefather status`
 2. **Monitor Logs**: `tail -f .claudefather/logs/*.log`
 3. **Handle Blockers**: Review blocked tasks and provide input
-4. **Retry if Needed**: `pnpm ai-supervisor reset <task-id>`
+4. **Retry if Needed**: `pnpm claudefather reset <task-id>`
 
 ### Handling Blockers
 
@@ -390,20 +487,34 @@ When a task is blocked:
 1. Review the blocked task: `cat .claudefather/state/{task-id}.json`
 2. Check the log: `cat .claudefather/logs/{task-id}.log`
 3. Provide feedback or fix the blocker
-4. Reset and retry: `pnpm ai-supervisor reset {task-id}`
-5. Resume: `pnpm ai-supervisor start`
+4. Reset and retry: `pnpm claudefather reset {task-id}`
+5. Resume: `pnpm claudefather start`
 
 ## Troubleshooting
 
-### Claude Code CLI not found
+### Authentication Issues
 
-```bash
-# Install Claude Code
-pip install claude-code
+Claudefather supports two authentication methods:
 
-# Or ensure it's in PATH
-which claude
-```
+**If using Claude Code CLI authentication:**
+- Verify you're logged in: `claude --version` (should not prompt for login)
+- Check credentials file exists: `cat ~/.claude/settings.json`
+- Re-authenticate if needed: `claude login`
+
+**If using direct API key:**
+- Verify environment variable is set: `echo $ANTHROPIC_API_KEY`
+- Add to shell profile for persistence (`~/.zshrc` or `~/.bashrc`):
+  ```bash
+  export ANTHROPIC_API_KEY="your-api-key-here"
+  ```
+
+**How Claudefather finds credentials:**
+
+Claudefather uses the Claude Agents SDK with `settingSources: ['user', 'local', 'project']`, which checks:
+1. `~/.claude/settings.json` (user-level, set by `claude login`)
+2. `.claude/settings.local.json` (local overrides)
+3. `.claude/settings.json` (project-level)
+4. `ANTHROPIC_API_KEY` environment variable (if the above don't contain credentials)
 
 ### State file validation errors
 
@@ -426,18 +537,18 @@ Review the feedback in the retry context. The supervisor will retry up to 3 time
 - [ ] Custom validators (project-specific output validation)
 - [ ] Interactive mode (pause/resume with human input)
 
-## Contributing
+## Extending Claudefather
 
-To extend the supervisor:
+To extend or customize Claudefather:
 
 1. **Add validators**: `src/validators.ts` for custom output validation
 2. **Add commands**: `src/index.ts` for new CLI commands
-3. **Customize prompts**: `templates/system-prompt.md` for system instructions
+3. **Customize prompts**: `.claudefather/templates/system-prompt.md` for system instructions
 4. **Extend state**: `src/types.ts` and `src/schemas.ts` for new state fields
 
 ## License
 
-Part of Document Assistant. See root LICENSE file.
+MIT License - see LICENSE file for details.
 
 ## Support
 
@@ -446,6 +557,6 @@ For issues or questions:
 1. Check logs: `.claudefather/logs/`
 2. Review state: `.claudefather/state/`
 3. See troubleshooting section above
-4. Check task format: `tasks/README.md`
+4. Check task format guidelines: `.claudefather/tasks/README.md`
 
 Happy automating! 🚀

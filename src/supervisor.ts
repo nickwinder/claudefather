@@ -16,9 +16,11 @@ export class AISupervisor {
   private stateManager: StateManager
   private claudeRunner: ClaudeRunner
   private promptBuilder: PromptBuilder
+  private projectDir: string
 
   constructor(projectDir: string = '.') {
     const resolvedProjectDir = resolve(projectDir)
+    this.projectDir = resolvedProjectDir
     this.taskLoader = new TaskLoader(resolvedProjectDir)
     this.stateManager = new StateManager(resolvedProjectDir)
     this.claudeRunner = new ClaudeRunner(this.stateManager, resolvedProjectDir)
@@ -62,11 +64,12 @@ export class AISupervisor {
       return
     }
 
-    // If blocked, stop
+    // If blocked, log and continue to next task
     if (state && this.isBlocker(state.status)) {
       console.log(chalk.yellow(`⚠️  Blocked: ${state.status}`))
       console.log(chalk.gray(`   ${state.blockerContext || 'No additional context'}`))
-      process.exit(0) // Stop at blocker
+      // Ensure we're on the original branch before continuing
+      await this.ensureOriginalBranch(state)
       return
     }
 
@@ -102,7 +105,8 @@ export class AISupervisor {
         }
         await this.stateManager.saveState(state)
         console.log(chalk.red('⚠️  Marked for human review'))
-        process.exit(0)
+        // Ensure we're on the original branch before continuing
+        await this.ensureOriginalBranch(state)
         return
       }
 
@@ -156,12 +160,13 @@ export class AISupervisor {
           continue
         }
 
-        // If blocker, stop
+        // If blocker, log and continue to next task
         if (this.isBlocker(state.status)) {
           console.log(chalk.yellow(`⚠️  Blocked: ${state.status}`))
           console.log(chalk.gray(`   ${state.blockerContext || 'No additional context'}`))
           await this.stateManager.saveState(state)
-          process.exit(0)
+          // Ensure we're on the original branch before continuing
+          await this.ensureOriginalBranch(state)
           return
         }
 
@@ -195,7 +200,8 @@ export class AISupervisor {
         }
 
         await this.stateManager.saveState(state)
-        process.exit(1)
+        // Ensure we're on the original branch before continuing
+        await this.ensureOriginalBranch(state)
         return
       }
     }
@@ -214,6 +220,38 @@ export class AISupervisor {
       'EXTERNAL_DEPENDENCY_BLOCKED',
       'MERGE_CONFLICT_DETECTED',
     ].includes(status)
+  }
+
+  /**
+   * Ensure we're on the original branch before continuing to next task
+   */
+  private async ensureOriginalBranch(state: TaskState): Promise<void> {
+    try {
+      const { execaCommand } = await import('execa')
+
+      // Check if we have an original branch recorded
+      const originalBranch = state.gitStatus?.originalBranch
+      if (!originalBranch) {
+        // No original branch recorded, nothing to do
+        return
+      }
+
+      // Get current branch
+      const { stdout: currentBranch } = await execaCommand('git branch --show-current', {
+        cwd: this.projectDir,
+      })
+
+      // If we're not on the original branch, switch back
+      if (currentBranch.trim() !== originalBranch.trim()) {
+        console.log(chalk.gray(`   Switching back to ${originalBranch} branch`))
+        await execaCommand(`git checkout ${originalBranch}`, {
+          cwd: this.projectDir,
+        })
+      }
+    } catch (error) {
+      // Log error but don't fail - just warn
+      console.log(chalk.yellow(`   ⚠️  Could not switch to original branch: ${error instanceof Error ? error.message : String(error)}`))
+    }
   }
 
   /**

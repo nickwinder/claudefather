@@ -112,7 +112,7 @@ export class ClaudeRunner {
 
                     if (isError) {
                       process.stdout.write(`  ⎿  ❌ Error\n`);
-                    } else if (resultText && resultText.length > 0 && resultText.length < 200) {
+                    } else if (typeof resultText === 'string' && resultText.length > 0 && resultText.length < 200) {
                       // Show short results inline
                       const preview = resultText.trim().split('\n')[0];
                       process.stdout.write(`  ⎿  ${preview}\n`);

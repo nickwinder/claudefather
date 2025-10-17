@@ -1,8 +1,23 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  type SDKMessage,
+  type SDKAssistantMessage,
+  type SDKUserMessage,
+  type SDKResultMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import { createWriteStream } from 'fs';
 import { TaskState } from './types.js';
 import { StateManager } from './state-manager.js';
 import { TaskStateSchema } from './schemas.js';
+
+/**
+ * Type guard functions for SDK messages
+ */
+const isAssistantMessage = (msg: SDKMessage): msg is SDKAssistantMessage => msg.type === 'assistant';
+
+const isUserMessage = (msg: SDKMessage): msg is SDKUserMessage => msg.type === 'user';
+
+const isResultMessage = (msg: SDKMessage): msg is SDKResultMessage => msg.type === 'result';
 
 /**
  * Runs Claude Code using the Agent SDK and manages execution
@@ -65,86 +80,97 @@ export class ClaudeRunner {
             logStream.write(messageStr + '\n');
 
             // Display messages to console based on type
-            const msg = message as any;
-
-            switch (message.type) {
-              case 'system':
-                // System initialization message (skip, not shown in Claude Code style)
-                break;
-
-              case 'user':
-                // User message with tool results
-                const userContent = msg.message?.content;
-                if (Array.isArray(userContent)) {
-                  for (const block of userContent) {
-                    if (block.type === 'tool_result') {
-                      // Show tool result
-                      const resultText = block.content || '';
-                      const isError = block.is_error || false;
-
-                      if (isError) {
-                        process.stdout.write(`  ⎿  ❌ Error\n`);
-                      } else if (resultText.length > 0 && resultText.length < 200) {
-                        // Show short results inline
-                        const preview = resultText.trim().split('\n')[0];
-                        process.stdout.write(`  ⎿  ${preview}\n`);
-                      } else {
-                        process.stdout.write(`  ⎿  ✓\n`);
-                      }
-                    }
-                  }
-                }
-                break;
-
-              case 'assistant':
-                // Assistant message with text and/or tool use
-                const content = msg.message?.content;
-                if (Array.isArray(content)) {
-                  for (const block of content) {
-                    if (block.type === 'text') {
-                      // Display assistant text response
-                      const text = block.text.trim();
-                      if (text) {
-                        process.stdout.write(`\n⏺ ${text}\n`);
-                      }
-                    } else if (block.type === 'tool_use') {
-                      // Display tool call in Claude Code style
-                      const input = block.input || {};
-
-                      // Build parameter string
-                      let params = '';
-                      if (input.file_path) {
-                        params = input.file_path;
-                      } else if (input.command) {
-                        params = input.command;
-                      } else if (input.pattern) {
-                        params = `"${input.pattern}"`;
-                      } else if (input.description) {
-                        params = input.description;
-                      } else if (input.prompt) {
-                        const p = input.prompt;
-                        params = p.length > 60 ? p.substring(0, 60) + '...' : p;
-                      }
-
-                      process.stdout.write(`\n⏺ ${block.name}(${params})\n`);
-                    }
-                  }
-                }
-                break;
-
-              case 'result':
-                // Final result with stats
-                if (msg.subtype === 'success') {
-                  process.stdout.write(`\n✓ Completed in ${(msg.duration_ms / 1000).toFixed(1)}s (${msg.num_turns} turns, $${msg.total_cost_usd.toFixed(4)})\n`);
-                } else {
-                  process.stdout.write(`\n❌ Failed: ${msg.subtype}\n`);
-                }
-                break;
-
-              case 'stream_event':
-                // Partial streaming events (if enabled)
-                break;
+            if (message.type === 'system') {
+              // System initialization message (skip, not shown in Claude Code style)
+              continue;
             }
+
+            if (isUserMessage(message)) {
+              // User message with tool results - TypeScript now knows this is SDKUserMessage
+              if (message.message?.content && Array.isArray(message.message.content)) {
+                for (const block of message.message.content) {
+                  if (block.type === 'tool_result') {
+                    // Show tool result
+                    const isError = block.is_error || false;
+
+                    // block.content can be a string, array, or object
+                    let resultText = '';
+                    if (typeof block.content === 'string') {
+                      resultText = block.content;
+                    } else if (Array.isArray(block.content)) {
+                      // Extract text from content blocks array
+                      resultText = block.content
+                        .filter((c: unknown): c is { type: 'text'; text: string } =>
+                          typeof c === 'object' && c !== null && 'type' in c && c.type === 'text'
+                        )
+                        .map((c: { type: 'text'; text: string }) => c.text)
+                        .join('\n');
+                    } else if (block.content && typeof block.content === 'object') {
+                      // Try to stringify object content
+                      resultText = JSON.stringify(block.content);
+                    }
+
+                    if (isError) {
+                      process.stdout.write(`  ⎿  ❌ Error\n`);
+                    } else if (resultText && resultText.length > 0 && resultText.length < 200) {
+                      // Show short results inline
+                      const preview = resultText.trim().split('\n')[0];
+                      process.stdout.write(`  ⎿  ${preview}\n`);
+                    } else {
+                      process.stdout.write(`  ⎿  ✓\n`);
+                    }
+                  }
+                }
+              }
+            }
+
+            if (isAssistantMessage(message)) {
+              // Assistant message with text and/or tool use - TypeScript knows this is SDKAssistantMessage
+              if (message.message?.content && Array.isArray(message.message.content)) {
+                for (const block of message.message.content) {
+                  if (block.type === 'text') {
+                    // Display assistant text response
+                    const text = block.text.trim();
+                    if (text) {
+                      process.stdout.write(`\n⏺ ${text}\n`);
+                    }
+                  } else if (block.type === 'tool_use') {
+                    // Display tool call in Claude Code style
+                    const input = block.input as Record<string, unknown>;
+
+                    // Build parameter string
+                    let params = '';
+                    if (typeof input.file_path === 'string') {
+                      params = input.file_path;
+                    } else if (typeof input.command === 'string') {
+                      params = input.command;
+                    } else if (typeof input.pattern === 'string') {
+                      params = `"${input.pattern}"`;
+                    } else if (typeof input.description === 'string') {
+                      params = input.description;
+                    } else if (typeof input.prompt === 'string') {
+                      const p = input.prompt;
+                      params = p.length > 60 ? p.substring(0, 60) + '...' : p;
+                    }
+
+                    process.stdout.write(`\n⏺ ${block.name}(${params})\n`);
+                  }
+                }
+              }
+            }
+
+            if (isResultMessage(message)) {
+              // Final result with stats - TypeScript knows this is SDKResultMessage
+              if (message.subtype === 'success') {
+                process.stdout.write(
+                  `\n✓ Completed in ${(message.duration_ms / 1000).toFixed(1)}s (${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)})\n`
+                );
+              } else {
+                process.stdout.write(`\n❌ Failed: ${message.subtype}\n`);
+              }
+            }
+
+            // stream_event messages are ignored (partial streaming events)
           }
         })(),
         timeoutPromise,

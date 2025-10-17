@@ -58,31 +58,6 @@ claude login
 export ANTHROPIC_API_KEY="your-api-key-here"
 ```
 
-### Usage
-
-```bash
-# Run Claudefather in current directory
-pnpm claudefather <command>
-
-# Run Claudefather in a specific project directory
-pnpm claudefather <command> --project-dir /path/to/project
-```
-
-#### Project Directory Option
-
-The `--project-dir` flag allows you to specify a different project directory for Claudefather to operate in. When not specified, Claudefather uses the current directory. This is useful for:
-
-- Running tasks in a different project
-- Supporting multi-project workflows
-- Isolating task execution environments
-
-### Building
-
-```bash
-# Build TypeScript
-pnpm build
-```
-
 ### Create Your First Task
 
 ```bash
@@ -96,14 +71,17 @@ pnpm claudefather create "Implement user authentication"
 ### Run Claudefather
 
 ```bash
-# Start processing tasks
-pnpm claudefather start
+# Start processing tasks in a project
+pnpm claudefather --project-dir /path/to/project start
 
 # Check progress
-pnpm claudefather status
+pnpm claudefather --project-dir /path/to/project status
 
 # Reset a task to retry
-pnpm claudefather reset 001-implement-user-authentication
+pnpm claudefather --project-dir /path/to/project reset 001-implement-user-authentication
+
+# Or run in current directory (omit --project-dir if current dir is your project)
+pnpm claudefather start
 ```
 
 ## Task Format

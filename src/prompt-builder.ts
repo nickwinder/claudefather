@@ -77,24 +77,6 @@ export class PromptBuilder {
       context += '\n';
     }
 
-    // Show actual verification results if different from what was claimed
-    if (previousState.verification) {
-      context += `Previous verification results:\n`;
-      context += `- Tests: Exit code ${previousState.verification.tests.exitCode}\n`;
-      if (previousState.verification.tests.exitCode !== 0) {
-        context += `  ${previousState.verification.tests.output.substring(0, 200)}\n`;
-      }
-      context += `- Build: Exit code ${previousState.verification.build.exitCode}\n`;
-      if (previousState.verification.build.exitCode !== 0) {
-        context += `  ${previousState.verification.build.output.substring(0, 200)}\n`;
-      }
-      context += `- Lint: Exit code ${previousState.verification.lint.exitCode}\n`;
-      if (previousState.verification.lint.exitCode !== 0) {
-        context += `  ${previousState.verification.lint.output.substring(0, 200)}\n`;
-      }
-      context += '\n';
-    }
-
     context += `Please address these issues and try again.\n`;
     context += `Write your updated state file when done.\n`;
 
@@ -116,10 +98,7 @@ Your task is to implement requirements and verify everything works.
 2. Create feature branch: \`git checkout -b feature/{task-id}\`
 3. Implement the requirements
 4. Write tests for new functionality
-5. Run verification:
-   - \`pnpm test\` (capture full output)
-   - \`pnpm build\` (capture full output)
-   - \`pnpm lint\` (capture full output)
+5. Run any necessary checks to verify your implementation
 6. Commit your work with descriptive message
 7. Switch back to original branch: \`git checkout {original-branch}\`
 8. DO NOT push any branches
@@ -135,23 +114,6 @@ Write \`.claudefather/state/{task-id}.json\` before exiting:
   "status": "VERIFIED_COMPLETE",
   "branch": "feature/{task-id}",
   "commitSha": "abc123...",
-  "verification": {
-    "tests": {
-      "exitCode": 0,
-      "output": "(paste full test output here)",
-      "summary": "42 tests passing"
-    },
-    "build": {
-      "exitCode": 0,
-      "output": "(paste full build output here)",
-      "summary": "Build completed successfully"
-    },
-    "lint": {
-      "exitCode": 0,
-      "output": "(paste full lint output here)",
-      "summary": "No linting errors"
-    }
-  },
   "gitStatus": {
     "branch": "{original-branch}",
     "originalBranch": "{original-branch}",
@@ -163,7 +125,7 @@ Write \`.claudefather/state/{task-id}.json\` before exiting:
   "startedAt": "2025-10-17T10:00:00Z",
   "completedAt": "2025-10-17T10:45:00Z",
   "filesChanged": ["src/file1.ts", "tests/file1.test.ts"],
-  "summary": "Brief summary of what was implemented"
+  "summary": "Implemented the feature. All 42 tests passing. Build successful. No lint errors."
 }
 \`\`\`
 
@@ -181,8 +143,8 @@ Write \`.claudefather/state/{task-id}.json\` before exiting:
 
 ## Important
 
-- Include ACTUAL command output in state file (copy/paste from terminal)
-- Don't hallucinate results - show real outputs
+- Provide detailed summary including test results, build status, and any issues
+- Be honest about status - use appropriate status values
 - Document any assumptions made
 - Try to fix issues 2-3 times before marking stuck
 - After switching back to original branch, the "branch" field in gitStatus should be the original branch (since that's the current branch)

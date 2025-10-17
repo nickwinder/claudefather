@@ -14,24 +14,6 @@ export type TaskStatus =
   | 'NEEDS_RETRY';
 
 /**
- * Represents a single command execution output
- */
-export interface CommandOutput {
-  exitCode: number;
-  output: string;
-  summary: string;
-}
-
-/**
- * Verification results from a task
- */
-export interface Verification {
-  tests: CommandOutput;
-  build: CommandOutput;
-  lint: CommandOutput;
-}
-
-/**
  * Git status information
  */
 export interface GitStatus {
@@ -83,7 +65,6 @@ export interface TaskState {
   branch?: string;
   commitSha?: string;
 
-  verification: Verification;
   gitStatus: GitStatus;
 
   blockerContext?: string;

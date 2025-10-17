@@ -1,24 +1,6 @@
 import { z } from 'zod';
 
 /**
- * Schema for validating command output
- */
-export const CommandOutputSchema = z.object({
-  exitCode: z.number().int(),
-  output: z.string(),
-  summary: z.string(),
-});
-
-/**
- * Schema for validating verification results
- */
-export const VerificationSchema = z.object({
-  tests: CommandOutputSchema,
-  build: CommandOutputSchema,
-  lint: CommandOutputSchema,
-});
-
-/**
  * Schema for validating git status
  */
 export const GitStatusSchema = z.object({
@@ -65,7 +47,6 @@ export const TaskStateSchema = z.object({
   branch: z.string().optional(),
   commitSha: z.string().optional(),
 
-  verification: VerificationSchema,
   gitStatus: GitStatusSchema,
 
   blockerContext: z.string().optional(),

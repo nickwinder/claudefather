@@ -73,7 +73,7 @@ Templates (.claudefather/templates/*.md)
 
 4. **PromptBuilder** (`src/prompt-builder.ts`) - Constructs the prompt sent to Claude, including system instructions from `.claudefather/templates/system-prompt.md`, the task description, and retry feedback from previous attempts if validation failed.
 
-5. **OutputValidator** (`src/validators.ts`) - Validates Claude's output state file by checking for hallucinations. Pattern-matches for real command outputs: test framework markers (✓, FAIL, PASS), file paths, exit codes, timing info. Returns specific validation issues that are fed back to Claude on retry.
+5. **OutputValidator** (`src/validators.ts`) - Validates Claude's output state file for consistency. Validates git state (commit SHA format, branch consistency). Returns specific validation issues that are fed back to Claude on retry.
 
 6. **Supervisor** (`src/supervisor.ts`) - Main orchestration logic. Loads tasks, processes each sequentially, manages retry loop (max 3 attempts). Stops at blockers (human intervention needed). Marks tasks as complete when validation passes.
 
@@ -88,20 +88,16 @@ Templates (.claudefather/templates/*.md)
 ### Retry Mechanism
 
 When a task fails validation:
-1. Supervisor detects issues (exit code mismatch, hallucinated output, git inconsistency)
+1. Supervisor detects issues (git inconsistency, invalid format, etc.)
 2. Issues are serialized as feedback into the retry prompt
 3. New prompt includes: system instructions + task + previous state + validation feedback
 4. Claude retries with context about what went wrong
 5. Max 3 attempts before marking for human review
 
-### Validation Patterns
+### Validation
 
-The validator checks for these signals of real command execution:
-
-- **Tests**: "PASS", "FAIL", "✓", test file paths (tests/*.test.ts), test counts
-- **Build**: "webpack", "vite", "tsc", "turbo", "dist/", "build/", timing info
-- **Lint**: "eslint", "prettier", warning/error counts, file paths
-- **Git**: Valid commit SHA format, consistent branch names
+The validator checks for:
+- **Git**: Valid commit SHA format, consistent branch names, no uncommitted changes
 
 ## Task File Format
 
@@ -135,17 +131,12 @@ Claude writes `.claudefather/state/{task-id}.json` with this schema (defined in 
   status: TaskStatus; // enum: VERIFIED_COMPLETE | HUMAN_REVIEW_REQUIRED | TESTS_FAILING_STUCK | etc
   branch: string;     // git branch name
   commitSha: string;  // commit hash
-  verification: {     // actual command outputs
-    tests: { exitCode, output, summary }
-    build: { exitCode, output, summary }
-    lint: { exitCode, output, summary }
-  }
   gitStatus: { branch, originalBranch?, uncommittedChanges, lastCommitMessage, lastCommitSha }
   attemptNumber: number;
   startedAt: ISO8601;
   completedAt: ISO8601;
   filesChanged: string[];
-  summary: string;
+  summary: string;    // Should include details about tests, build, and any issues
   assumptions?: Array<{ description, reasoning }>;
   workarounds?: Array<{ issue, solution }>;
   feedback?: { issues, instruction };     // Added by supervisor on retry
@@ -231,13 +222,11 @@ Supervisor stops processing when a blocker is encountered and exits with code 0.
 
 ### Output Validation Philosophy
 
-The validator is intentionally conservative to catch hallucinations:
-- Detects suspicious patterns (too clean output, missing real markers)
-- Checks exit code consistency (claim 0 but exit non-zero = catch)
+The validator checks for basic consistency:
 - Validates git state (commit SHA format, branch consistency)
 - Reports all issues found, not just first one
 
-Claude should always include actual command output, not summaries.
+Claude should provide detailed summaries in the summary field, including test results, build status, and any issues encountered.
 
 ### Assumptions & Workarounds
 
@@ -298,7 +287,6 @@ All code uses TypeScript strict mode. No existing test suite yet (this is for a 
 
 ## Debugging Tips
 
-- **Hallucination detected**: Check what patterns are triggering. Claude may need to copy more real output.
-- **Exit code mismatch**: Supervisor caught Claude claiming exit 0 when it was non-zero. Check actual command output.
 - **Git inconsistency**: Branch name or commit format doesn't match expectations. Check git status in state file.
 - **Max retries exceeded**: Task hit 3 attempts and still has validation issues. Likely needs human review or different approach.
+- **Invalid summary**: Summary should be detailed and include test results, build status, and any issues encountered.

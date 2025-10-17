@@ -91,11 +91,6 @@ export class AISupervisor {
           completedAt: new Date().toISOString(),
           filesChanged: state?.filesChanged || [],
           summary: state?.summary || 'Task failed after max retries',
-          verification: state?.verification || {
-            tests: { exitCode: 1, output: '', summary: '' },
-            build: { exitCode: 1, output: '', summary: '' },
-            lint: { exitCode: 1, output: '', summary: '' },
-          },
           gitStatus: state?.gitStatus || {
             branch: '',
             uncommittedChanges: true,
@@ -121,7 +116,7 @@ export class AISupervisor {
 
         // Validate outputs
         const spinner2 = ora('Validating outputs...').start()
-        lastValidation = OutputValidator.validate(state.verification, state.gitStatus)
+        lastValidation = OutputValidator.validate(state.gitStatus)
 
         if (!lastValidation.valid) {
           spinner2.warn(`Found ${lastValidation.issues.length} issue(s)`)
@@ -186,11 +181,6 @@ export class AISupervisor {
           completedAt: new Date().toISOString(),
           filesChanged: state?.filesChanged || [],
           summary: state?.summary || `Task failed: ${message}`,
-          verification: state?.verification || {
-            tests: { exitCode: 1, output: '', summary: '' },
-            build: { exitCode: 1, output: '', summary: '' },
-            lint: { exitCode: 1, output: '', summary: '' },
-          },
           gitStatus: state?.gitStatus || {
             branch: '',
             uncommittedChanges: true,

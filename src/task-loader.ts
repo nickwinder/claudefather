@@ -1,7 +1,7 @@
-import { readdir, readFile } from 'fs/promises';
-import { join } from 'path';
+import { readdir, readFile, mkdir } from 'fs/promises';
+import { join, resolve, isAbsolute } from 'path';
 import matter from 'gray-matter';
-import { Task } from './types';
+import { Task } from './types.js';
 
 /**
  * Loads tasks from markdown files in .claudefather/tasks directory
@@ -10,7 +10,10 @@ export class TaskLoader {
   private taskDir: string;
 
   constructor(projectDir: string = '.') {
-    this.taskDir = join(projectDir, '.claudefather', 'tasks');
+    const absoluteProjectDir = isAbsolute(projectDir) 
+      ? projectDir 
+      : resolve(process.cwd(), projectDir);
+    this.taskDir = join(absoluteProjectDir, '.claudefather', 'tasks');
   }
 
   /**
@@ -113,15 +116,13 @@ export class TaskLoader {
     const content = `# ${description}\n\n(Add task details here)\n`;
 
     // Create tasks directory if it doesn't exist
-    try {
-      await readdir(this.taskDir);
-    } catch {
-      // Directory doesn't exist, this will be handled by supervisor
-    }
+    await mkdir(this.taskDir, { recursive: true });
+
+    const taskFile = join(this.taskDir, `${finalId}.md`);
 
     return {
       id: finalId,
-      file: join(this.taskDir, `${finalId}.md`),
+      file: taskFile,
       content: content.trim(),
       metadata: {},
     };

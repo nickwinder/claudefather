@@ -15,26 +15,26 @@ A lightweight CLI tool that orchestrates Claude Code sessions to autonomously co
 
 ### Usage
 
-Since this is part of a monorepo, use one of these approaches:
-
-**Option A: From the claudefather directory (recommended)**
 ```bash
-cd tools/claudefather
+# Run Claudefather in current directory
 pnpm claudefather <command>
+
+# Run Claudefather in a specific project directory
+pnpm claudefather <command> --project-dir /path/to/project
 ```
 
-**Option B: From project root with filter**
-```bash
-pnpm --filter @nutrient/claudefather claudefather <command>
-```
+#### Project Directory Option
+
+The `--project-dir` flag allows you to specify a different project directory for Claudefather to operate in. When not specified, Claudefather uses the current directory. This is useful for:
+
+- Running tasks in a different project
+- Supporting multi-project workflows
+- Isolating task execution environments
 
 ### Building
 
 ```bash
-# Navigate to claudefather directory
-cd tools/claudefather
-
-# Build TypeScript (already built, but rebuild if needed)
+# Build TypeScript
 pnpm build
 ```
 
@@ -195,12 +195,24 @@ Claude writes `.claudefather/state/{task-id}.json`:
 Run Claudefather and process all tasks:
 
 ```bash
+# Run tasks in the current project
 pnpm claudefather start
 
-# Options:
-#   --tasks-dir <dir>       Directory with tasks (default: tasks)
-#   --supervisor-dir <dir>  State directory (default: .claudefather)
+# Run tasks in a different project directory
+pnpm claudefather start --project-dir /path/to/project
 ```
+
+#### Project Directory
+
+The `--project-dir` flag allows you to specify a different project for Claudefather to operate in. When not specified, Claudefather uses the current directory.
+
+Claudefather always uses a consistent directory structure:
+
+- **Tasks**: Always stored in `.claudefather/tasks/`
+- **Templates**: Always stored in `.claudefather/templates/`
+- **Logs and State**: Always in `.claudefather/logs/` and `.claudefather/state/`
+
+This ensures consistent and predictable task management across different projects.
 
 ### status
 
@@ -306,7 +318,6 @@ Please address these issues and try again.
 ## Files and Directories
 
 ```
-tools/claudefather/
 ├── src/
 │   ├── index.ts              # CLI entry point
 │   ├── supervisor.ts         # Main orchestration

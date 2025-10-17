@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import { Task, TaskState, ValidationResult } from './types';
+import { Task, TaskState, ValidationResult } from './types.js';
 
 /**
  * Builds prompts with system instructions and context
@@ -24,7 +24,13 @@ export class PromptBuilder {
     // Load system prompt template
     let systemPrompt = await this.loadSystemPrompt();
 
-    let prompt = systemPrompt + '\n\n---\n\n[USER TASK]\n' + task.content;
+    let prompt = systemPrompt + '\n\n---\n\n[TASK ASSIGNMENT]\n\n';
+    prompt += `Task ID: ${task.id}\n\n`;
+    prompt += `IMPORTANT: You MUST use the exact Task ID "${task.id}" when:\n`;
+    prompt += `- Creating the feature branch: feature/${task.id}\n`;
+    prompt += `- Writing the state file: .claudefather/state/${task.id}.json\n`;
+    prompt += `- Setting the taskId field in the JSON: "taskId": "${task.id}"\n\n`;
+    prompt += `---\n\n[TASK DESCRIPTION]\n\n${task.content}`;
 
     // Add retry context if this is a retry
     if (previousState) {
@@ -106,16 +112,18 @@ Your task is to implement requirements and verify everything works.
 
 ## Your Workflow
 
-1. Create feature branch: \`feature/{task-id}\`
-2. Implement the requirements
-3. Write tests for new functionality
-4. Run verification:
+1. Check current branch with \`git branch --show-current\` and save it
+2. Create feature branch: \`git checkout -b feature/{task-id}\`
+3. Implement the requirements
+4. Write tests for new functionality
+5. Run verification:
    - \`pnpm test\` (capture full output)
    - \`pnpm build\` (capture full output)
    - \`pnpm lint\` (capture full output)
-5. Commit your work with descriptive message
-6. DO NOT push the branch
-7. Write state file and exit
+6. Commit your work with descriptive message
+7. Switch back to original branch: \`git checkout {original-branch}\`
+8. DO NOT push any branches
+9. Write state file and exit
 
 ## State File Format
 
@@ -145,7 +153,8 @@ Write \`.claudefather/state/{task-id}.json\` before exiting:
     }
   },
   "gitStatus": {
-    "branch": "feature/{task-id}",
+    "branch": "{original-branch}",
+    "originalBranch": "{original-branch}",
     "uncommittedChanges": false,
     "lastCommitMessage": "Your commit message",
     "lastCommitSha": "abc123def456..."
@@ -176,6 +185,8 @@ Write \`.claudefather/state/{task-id}.json\` before exiting:
 - Don't hallucinate results - show real outputs
 - Document any assumptions made
 - Try to fix issues 2-3 times before marking stuck
+- After switching back to original branch, the "branch" field in gitStatus should be the original branch (since that's the current branch)
+- Save the original branch name in "originalBranch" field so supervisor can verify you switched back
 - Exit after writing state file`;
   }
 }

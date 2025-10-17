@@ -140,7 +140,7 @@ Claude writes `.claudefather/state/{task-id}.json` with this schema (defined in 
     build: { exitCode, output, summary }
     lint: { exitCode, output, summary }
   }
-  gitStatus: { branch, uncommittedChanges, lastCommitMessage, lastCommitSha }
+  gitStatus: { branch, originalBranch?, uncommittedChanges, lastCommitMessage, lastCommitSha }
   attemptNumber: number;
   startedAt: ISO8601;
   completedAt: ISO8601;
@@ -287,10 +287,13 @@ All code uses TypeScript strict mode. No existing test suite yet (this is for a 
 
 ## Git Workflow
 
+- Claude checks the current branch before starting (e.g., `main`, `develop`)
 - Tasks run on feature branches named `feature/{task-id}`
 - Claude commits work to the feature branch
+- **Claude switches back to the original branch** after committing
 - **Claude does NOT push branches** - supervisor manages that
-- State files track git status for verification
+- State files track git status (including `originalBranch`) for verification
+- The `branch` field in gitStatus should reflect the current branch (original branch after switching back)
 - If `MERGE_CONFLICT_DETECTED`, human must resolve and reset
 
 ## Debugging Tips

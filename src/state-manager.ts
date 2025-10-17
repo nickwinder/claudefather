@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { TaskState } from './types';
-import { TaskStateSchema } from './schemas';
+import { TaskState } from './types.js';
+import { TaskStateSchema } from './schemas.js';
 
 /**
  * Manages task state persistence in .claudefather directory

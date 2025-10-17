@@ -23,6 +23,7 @@ export const VerificationSchema = z.object({
  */
 export const GitStatusSchema = z.object({
   branch: z.string(),
+  originalBranch: z.string().optional(),
   uncommittedChanges: z.boolean(),
   lastCommitMessage: z.string(),
   lastCommitSha: z.string(),

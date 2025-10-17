@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { AISupervisor } from './supervisor';
-import { TaskLoader } from './task-loader';
+import { AISupervisor } from './supervisor.js';
+import { TaskLoader } from './task-loader.js';
 import { writeFile, readdir, readFile } from 'fs/promises';
 import { watch } from 'fs';
-import { join } from 'path';
+import { join, resolve, isAbsolute } from 'path';
 import chalk from 'chalk';
 
 const program = new Command();
@@ -18,10 +18,11 @@ program.name('claudefather').description('Lightweight AI orchestrator for managi
 program
   .command('start')
   .description('Start the supervisor and process all tasks')
-  .option('--project-dir <dir>', 'Target project directory where Claude will work', '.')
-  .action(async (options) => {
+  .action(async (_options, command) => {
     try {
-      const supervisor = new AISupervisor(options.projectDir);
+      const globalOpts = command.parent.opts();
+      const projectDir = globalOpts.projectDir || '.';
+      const supervisor = new AISupervisor(projectDir);
       await supervisor.run();
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
@@ -35,10 +36,11 @@ program
 program
   .command('status')
   .description('Show status of all tasks')
-  .option('--project-dir <dir>', 'Target project directory', '.')
-  .action(async (options) => {
+  .action(async (_options, command) => {
     try {
-      const supervisor = new AISupervisor(options.projectDir);
+      const globalOpts = command.parent.opts();
+      const projectDir = globalOpts.projectDir || '.';
+      const supervisor = new AISupervisor(projectDir);
       await supervisor.getStatus();
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
@@ -52,11 +54,11 @@ program
 program
   .command('create <description>')
   .description('Create a new task file')
-  .option('--project-dir <dir>', 'Target project directory', '.')
-  .action(async (description, options) => {
+  .action(async (description, _options, command) => {
     try {
-      const { resolve } = await import('path');
-      const projectDir = resolve(options.projectDir);
+      const globalOpts = command.parent.opts();
+      const projectDirOption = globalOpts.projectDir || '.';
+      const projectDir = isAbsolute(projectDirOption) ? projectDirOption : resolve(process.cwd(), projectDirOption);
       const taskLoader = new TaskLoader(projectDir);
 
       // Get next task number
@@ -75,7 +77,9 @@ program
         .substring(0, 50);
 
       const taskId = `${nextNum}-${slug}`;
-      const taskFile = join(projectDir, '.claudefather', 'tasks', `${taskId}.md`);
+      // Use taskLoader to create task to ensure directory exists
+      const taskToCreate = await taskLoader.createTask(taskId, description);
+      const taskFile = taskToCreate.file;
 
       const content = `# ${description}
 
@@ -103,12 +107,12 @@ Make sure to commit your work on a feature branch and do not push.
 program
   .command('reset [taskId]')
   .description('Reset a task to pending state')
-  .option('--project-dir <dir>', 'Target project directory', '.')
   .option('--all', 'Reset all tasks')
-  .action(async (taskId, options) => {
+  .action(async (taskId, options, command) => {
     try {
-      const { resolve } = await import('path');
-      const projectDir = resolve(options.projectDir);
+      const globalOpts = command.parent.opts();
+      const projectDirOption = globalOpts.projectDir || '.';
+      const projectDir = isAbsolute(projectDirOption) ? projectDirOption : resolve(process.cwd(), projectDirOption);
       const supervisor = new AISupervisor(projectDir);
 
       if (options.all) {
@@ -139,11 +143,11 @@ program
   .option('-t, --task <id>', 'Specific task ID to view')
   .option('-f, --follow', 'Follow log in real-time (like tail -f)')
   .option('-n, --lines <num>', 'Show last N lines', '50')
-  .option('--project-dir <dir>', 'Target project directory', '.')
-  .action(async (options) => {
+  .action(async (options, command) => {
     try {
-      const { resolve } = await import('path');
-      const projectDir = resolve(options.projectDir);
+      const globalOpts = command.parent.opts();
+      const projectDirOption = globalOpts.projectDir || '.';
+      const projectDir = isAbsolute(projectDirOption) ? projectDirOption : resolve(process.cwd(), projectDirOption);
       const logsDir = join(projectDir, '.claudefather', 'logs');
 
       let logPath: string;
@@ -244,4 +248,6 @@ program
     }
   });
 
-program.parse();
+program
+  .option('--project-dir <dir>', 'Target project directory', '.')
+  .parse();

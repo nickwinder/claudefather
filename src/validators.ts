@@ -1,4 +1,4 @@
-import { Verification, GitStatus, ValidationResult, ValidationIssue } from './types';
+import { Verification, GitStatus, ValidationResult, ValidationIssue } from './types.js';
 
 /**
  * Validates outputs to detect hallucinations and inconsistencies

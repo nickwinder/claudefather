@@ -1,9 +1,9 @@
-import { Task, TaskState, ValidationResult } from './types'
-import { TaskLoader } from './task-loader'
-import { StateManager } from './state-manager'
-import { ClaudeRunner } from './claude-runner'
-import { PromptBuilder } from './prompt-builder'
-import { OutputValidator } from './validators'
+import { Task, TaskState, ValidationResult } from './types.js'
+import { TaskLoader } from './task-loader.js'
+import { StateManager } from './state-manager.js'
+import { ClaudeRunner } from './claude-runner.js'
+import { PromptBuilder } from './prompt-builder.js'
+import { OutputValidator } from './validators.js'
 import chalk from 'chalk'
 import ora from 'ora'
 import { resolve } from 'path'
@@ -112,10 +112,8 @@ export class AISupervisor {
         // Build prompt with retry context
         const prompt = await this.promptBuilder.buildPrompt(task, state ?? undefined, lastValidation)
 
-        // Execute Claude Code
-        const spinner = ora('Running Claude Code...').start()
+        // Execute Claude Code (output streams in real-time)
         state = await this.claudeRunner.run(task.id, prompt)
-        spinner.succeed('Claude Code completed')
 
         // Validate outputs
         const spinner2 = ora('Validating outputs...').start()

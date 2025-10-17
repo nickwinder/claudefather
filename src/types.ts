@@ -36,6 +36,7 @@ export interface Verification {
  */
 export interface GitStatus {
   branch: string;
+  originalBranch?: string; // Branch that was active before creating feature branch
   uncommittedChanges: boolean;
   lastCommitMessage: string;
   lastCommitSha: string;

@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { TaskState } from './types.js';
 import { TaskStateSchema } from './schemas.js';
@@ -121,15 +121,13 @@ export class StateManager {
   }
 
   /**
-   * Reset task state (delete the state file)
+   * Reset task state (completely remove the state file)
    */
   async resetTask(taskId: string): Promise<void> {
     const filePath = this.getStatePath(taskId);
 
     try {
-      await readFile(filePath); // Check if file exists
-      // Would delete here, but we're just resetting by clearing
-      await writeFile(filePath, '', 'utf-8'); // Clear the file
+      await unlink(filePath); // Delete the file completely
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         // File doesn't exist, nothing to reset

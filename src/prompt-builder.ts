@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { Task, TaskState, ValidationResult } from './types.js';
 
@@ -19,17 +20,49 @@ export class PromptBuilder {
   async buildPrompt(
     task: Task,
     previousState?: TaskState,
-    validation?: ValidationResult
+    validation?: ValidationResult,
+    branchPrefix: string = 'feature'
   ): Promise<string> {
-    // Load system prompt template
-    let systemPrompt = await this.loadSystemPrompt();
+    // Build system prompt (core instructions + optional project template)
+    let systemPrompt = await this.buildSystemPrompt();
+
+    // Substitute branch prefix placeholder
+    systemPrompt = systemPrompt.replace(/{BRANCH_PREFIX}/g, branchPrefix);
 
     let prompt = systemPrompt + '\n\n---\n\n[TASK ASSIGNMENT]\n\n';
     prompt += `Task ID: ${task.id}\n\n`;
     prompt += `IMPORTANT: You MUST use the exact Task ID "${task.id}" when:\n`;
-    prompt += `- Creating the feature branch: feature/${task.id}\n`;
+    prompt += `- Creating the branch: ${branchPrefix}/${task.id}\n`;
     prompt += `- Writing the state file: .claudefather/state/${task.id}.json\n`;
-    prompt += `- Setting the taskId field in the JSON: "taskId": "${task.id}"\n\n`;
+    prompt += `- Setting the taskId field in the JSON: "taskId": "${task.id}"\n`;
+    prompt += `- Setting the branchPrefix field in the JSON: "branchPrefix": "${branchPrefix}"\n\n`;
+
+    // Include task metadata if present
+    if (task.metadata && Object.keys(task.metadata).length > 0) {
+      prompt += `[TASK METADATA]\n\n`;
+
+      // Highlight PR creation requirement if present
+      if (task.metadata.createPr === true) {
+        prompt += `⚠️ **PR CREATION REQUIRED**: createPr = true\n`;
+        prompt += `This task REQUIRES creating a Pull Request on GitHub before marking complete.\n`;
+        if (task.metadata.title) {
+          prompt += `- PR Title: ${task.metadata.title}\n`;
+        }
+        if (task.metadata.labels && Array.isArray(task.metadata.labels)) {
+          prompt += `- PR Labels: ${task.metadata.labels.join(', ')}\n`;
+        }
+        prompt += `\n`;
+      }
+
+      // Include other metadata
+      for (const [key, value] of Object.entries(task.metadata)) {
+        if (key !== 'createPr' && key !== 'title' && key !== 'labels') {
+          prompt += `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}\n`;
+        }
+      }
+      prompt += '\n';
+    }
+
     prompt += `---\n\n[TASK DESCRIPTION]\n\n${task.content}`;
 
     // Add retry context if this is a retry
@@ -41,15 +74,25 @@ export class PromptBuilder {
   }
 
   /**
-   * Load the system prompt template
+   * Build the system prompt (core instructions + optional project template)
+   *
+   * This is called as part of buildPrompt() to construct the full system instructions.
+   * Flow:
+   * 1. Get core instructions (workflow, state format, critical rules)
+   * 2. If project template exists at .claudefather/templates/system-prompt.md, append it
+   * 3. Project template provides project-specific extensions to core instructions
    */
-  private async loadSystemPrompt(): Promise<string> {
-    try {
-      return await readFile(this.systemPromptPath, 'utf-8');
-    } catch (error) {
-      // Return default system prompt if template file not found
-      return this.getDefaultSystemPrompt();
+  private async buildSystemPrompt(): Promise<string> {
+    const corePrompt = this.getDefaultSystemPrompt();
+
+    // Check if project template exists and append it if present
+    if (existsSync(this.systemPromptPath)) {
+      const projectTemplate = await readFile(this.systemPromptPath, 'utf-8');
+      return corePrompt + '\n\n' + projectTemplate;
     }
+
+    // No project template, just use core instructions
+    return corePrompt;
   }
 
   /**
@@ -84,71 +127,13 @@ export class PromptBuilder {
   }
 
   /**
-   * Default system prompt - used if template file not found
+   * Default system prompt - minimal core instructions
+   * The template file provides complete detailed guidance and is appended below
    */
   private getDefaultSystemPrompt(): string {
-    return `[SYSTEM INSTRUCTIONS - AI SUPERVISOR MODE]
+    return `You are working in an automated task queue managed by an AI supervisor.
+Your job is to implement requirements, verify everything works, and report your status.
 
-You are working in an automated task queue managed by an AI supervisor.
-Your task is to implement requirements and verify everything works.
-
-## Your Workflow
-
-1. Check current branch with \`git branch --show-current\` and save it
-2. Create feature branch: \`git checkout -b feature/{task-id}\`
-3. Implement the requirements
-4. Write tests for new functionality
-5. Run any necessary checks to verify your implementation
-6. Commit your work with descriptive message
-7. Switch back to original branch: \`git checkout {original-branch}\`
-8. DO NOT push any branches
-9. Write state file and exit
-
-## State File Format
-
-Write \`.claudefather/state/{task-id}.json\` before exiting:
-
-\`\`\`json
-{
-  "taskId": "{task-id}",
-  "status": "VERIFIED_COMPLETE",
-  "branch": "feature/{task-id}",
-  "commitSha": "abc123...",
-  "gitStatus": {
-    "branch": "{original-branch}",
-    "originalBranch": "{original-branch}",
-    "uncommittedChanges": false,
-    "lastCommitMessage": "Your commit message",
-    "lastCommitSha": "abc123def456..."
-  },
-  "attemptNumber": 1,
-  "startedAt": "2025-10-17T10:00:00Z",
-  "completedAt": "2025-10-17T10:45:00Z",
-  "filesChanged": ["src/file1.ts", "tests/file1.test.ts"],
-  "summary": "Implemented the feature. All 42 tests passing. Build successful. No lint errors."
-}
-\`\`\`
-
-## Status Values
-
-- **VERIFIED_COMPLETE** - All checks passed, work is ready
-- **TASK_COMPLETE** - Work done, awaiting verification
-- **HUMAN_REVIEW_REQUIRED** - Need clarification or design decision
-- **TESTS_FAILING_STUCK** - Tests fail, exhausted debugging
-- **BUILD_FAILING_STUCK** - Build fails, can't resolve
-- **LINT_ERRORS_STUCK** - Lint errors need architectural change
-- **MISSING_INFORMATION** - Cannot make reasonable assumption
-- **EXTERNAL_DEPENDENCY_BLOCKED** - Service/DB/network issue
-- **MERGE_CONFLICT_DETECTED** - Git conflicts need resolution
-
-## Important
-
-- Provide detailed summary including test results, build status, and any issues
-- Be honest about status - use appropriate status values
-- Document any assumptions made
-- Try to fix issues 2-3 times before marking stuck
-- After switching back to original branch, the "branch" field in gitStatus should be the original branch (since that's the current branch)
-- Save the original branch name in "originalBranch" field so supervisor can verify you switched back
-- Exit after writing state file`;
+Read the complete instructions below carefully - they contain the full workflow, state file requirements, and status definitions.`;
   }
 }

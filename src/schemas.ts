@@ -46,6 +46,7 @@ export const TaskStateSchema = z.object({
   ]),
   branch: z.string().optional(),
   commitSha: z.string().optional(),
+  branchPrefix: z.string(),
 
   gitStatus: GitStatusSchema,
 

@@ -86,9 +86,18 @@ pnpm claudefather start
 
 ## Task Format
 
-Tasks are markdown files in the `.claudefather/tasks/` directory:
+Tasks are markdown files in the `.claudefather/tasks/` directory with optional YAML frontmatter for metadata:
 
 ```markdown
+---
+createPr: true
+title: Add User Authentication
+labels:
+  - feature
+  - backend
+  - auth
+---
+
 # Implement User Authentication
 
 Add JWT-based authentication to the API:
@@ -106,6 +115,57 @@ Ensure:
 - No linting errors with `pnpm lint`
 - Work committed to feature branch
 - Branch not pushed to remote
+```
+
+### Task Frontmatter
+
+The optional YAML frontmatter at the top of task files controls task metadata:
+
+#### `createPr` (boolean)
+
+Set to `true` to require Claude to create a GitHub Pull Request after completing the task:
+
+```yaml
+---
+createPr: true
+title: "Add User Authentication"
+labels:
+  - feature
+  - backend
+---
+```
+
+When `createPr: true`:
+- Claude MUST create a PR on GitHub before marking the task complete
+- If a `title` is provided, it will be used as the PR title
+- If `labels` are provided, they will be added to the PR
+- The PR will be created from the feature branch to the original branch
+- The PR status will be included in the task state file
+
+#### `title` (string, optional)
+
+Specifies the PR title to use when `createPr: true`. If not provided, a title will be auto-generated from the task:
+
+```yaml
+---
+createPr: true
+title: "Add JWT authentication to API"
+---
+```
+
+#### `labels` (array of strings, optional)
+
+GitHub labels to add to the PR when `createPr: true`:
+
+```yaml
+---
+createPr: true
+labels:
+  - feature
+  - backend
+  - auth
+  - high-priority
+---
 ```
 
 See `.claudefather/tasks/README.md` for task writing guidelines (created automatically when you run `pnpm claudefather create`).
@@ -354,13 +414,16 @@ Please address these issues and try again.
 │   ├── claude-runner.ts      # Execute Claude via Agents SDK
 │   ├── prompt-builder.ts     # Build prompts with context
 │   ├── validators.ts         # Validate outputs
+│   ├── config-loader.ts      # Load configuration
 │   ├── schemas.ts            # Zod schemas
 │   └── types.ts              # TypeScript types
 ├── .claudefather/            # Working directory (gitignored)
 │   ├── tasks/                # Task markdown files
 │   ├── templates/            # System prompt templates
 │   ├── state/                # Per-task state JSON files
-│   └── logs/                 # Full session logs
+│   ├── logs/                 # Full session logs
+│   ├── .claudefatherrc       # Configuration file (JSON)
+│   └── .env                  # Environment variables
 ├── package.json
 ├── tsconfig.json
 ├── CLAUDE.md                 # Project instructions for Claude
@@ -368,6 +431,48 @@ Please address these issues and try again.
 ```
 
 **Note**: When using `--project-dir`, the `.claudefather/` directory is created in the specified project directory.
+
+### Configuration Files
+
+#### `.claudefatherrc`
+
+Located at `.claudefather/.claudefatherrc`, this is a JSON configuration file that controls Claudefather's behavior:
+
+```json
+{
+  "branchPrefix": "feature"
+}
+```
+
+**Configuration Options:**
+
+- **branchPrefix** (string, default: `"feature"`) - The prefix used for feature branches created during task execution. For example, with `"feature"` prefix, task `001-auth` will create a branch named `feature/001-auth`.
+
+#### `.env`
+
+Located at `.claudefather/.env`, this is an environment variable file that gets loaded when Claudefather starts. Use it to set environment variables needed by your project or tasks:
+
+```bash
+# Example .claudefather/.env
+DATABASE_URL=postgresql://localhost/mydb
+API_KEY=secret-key-123
+NODE_ENV=development
+CUSTOM_VAR=value
+```
+
+**Use Cases:**
+
+- Set environment variables for tests or build processes
+- Configure API endpoints or credentials
+- Override default behavior for specific projects
+- Set project-specific build flags or options
+
+The `.env` file is loaded using the `dotenv` package, so any variables defined here will be available to:
+- Claude when executing tasks
+- Test runners and build tools spawned by Claude
+- Any scripts that source the environment
+
+**Important**: Don't commit sensitive credentials to version control. Use `.env` for project-specific settings and keep credentials in your local environment or CI/CD secrets.
 
 ## Key Technologies
 

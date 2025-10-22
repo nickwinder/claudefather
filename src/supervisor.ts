@@ -4,6 +4,7 @@ import { StateManager } from './state-manager.js'
 import { ClaudeRunner } from './claude-runner.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { OutputValidator } from './validators.js'
+import { ConfigLoader, type Config } from './config-loader.js'
 import chalk from 'chalk'
 import ora from 'ora'
 import { resolve } from 'path'
@@ -17,6 +18,7 @@ export class AISupervisor {
   private claudeRunner: ClaudeRunner
   private promptBuilder: PromptBuilder
   private projectDir: string
+  private config: Config
 
   constructor(projectDir: string = '.') {
     const resolvedProjectDir = resolve(projectDir)
@@ -25,6 +27,10 @@ export class AISupervisor {
     this.stateManager = new StateManager(resolvedProjectDir)
     this.claudeRunner = new ClaudeRunner(this.stateManager, resolvedProjectDir)
     this.promptBuilder = new PromptBuilder(resolvedProjectDir)
+
+    // Load config from .claudefatherrc and .env
+    const configLoader = new ConfigLoader(resolvedProjectDir)
+    this.config = configLoader.load()
   }
 
   /**
@@ -86,6 +92,7 @@ export class AISupervisor {
           ...state!,
           status: 'HUMAN_REVIEW_REQUIRED',
           blockerContext: 'Max retries exceeded',
+          branchPrefix: state?.branchPrefix || this.config.branchPrefix,
           attemptNumber: attemptNum,
           startedAt: state?.startedAt || new Date().toISOString(),
           completedAt: new Date().toISOString(),
@@ -108,8 +115,13 @@ export class AISupervisor {
       console.log(chalk.blue(`\n  🔄 Attempt ${attemptNum}/${maxAttempts}`))
 
       try {
-        // Build prompt with retry context
-        const prompt = await this.promptBuilder.buildPrompt(task, state ?? undefined, lastValidation)
+        // Build prompt with retry context and branch prefix
+        const prompt = await this.promptBuilder.buildPrompt(
+          task,
+          state ?? undefined,
+          lastValidation,
+          this.config.branchPrefix
+        )
 
         // Execute Claude Code (output streams in real-time)
         state = await this.claudeRunner.run(task.id, prompt)
@@ -176,6 +188,7 @@ export class AISupervisor {
           taskId: task.id,
           status: 'HUMAN_REVIEW_REQUIRED',
           blockerContext: `Error during execution: ${message}`,
+          branchPrefix: state?.branchPrefix || this.config.branchPrefix,
           attemptNumber: attemptNum,
           startedAt: state?.startedAt || new Date().toISOString(),
           completedAt: new Date().toISOString(),

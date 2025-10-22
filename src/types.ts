@@ -64,6 +64,7 @@ export interface TaskState {
   status: TaskStatus;
   branch?: string;
   commitSha?: string;
+  branchPrefix: string; // e.g., "feature", "fix", "docs"
 
   gitStatus: GitStatus;
 

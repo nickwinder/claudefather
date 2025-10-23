@@ -10,6 +10,8 @@ A lightweight CLI tool that orchestrates Claude sessions to autonomously complet
 ✅ **State Persistence** - Tracks progress across restarts
 ✅ **Blocker Detection** - Stops at human intervention points
 ✅ **Full Logging** - Captures all activity for debugging
+✅ **Parallel Execution** - Runs multiple tasks concurrently using git worktrees
+✅ **File Synchronization** - Syncs task files and state from worktrees back to main project
 
 ## Installation
 
@@ -183,40 +185,57 @@ See `.claudefather/tasks/README.md` for task writing guidelines (created automat
 ┌────────────▼────────────────────┐
 │  Supervisor (Claudefather)      │
 │  - Loads tasks                  │
+│  - Creates git worktrees        │
 │  - Builds prompts               │
+│  - Manages parallel execution   │
 │  - Manages retries              │
 │  - Validates outputs            │
+│  - Syncs files from worktrees   │
 └────────────┬────────────────────┘
              │
-┌────────────▼────────────────────┐
-│  Claude Agents SDK              │
-│  - Makes API calls to Claude    │
-│  - Executes autonomously        │
-│  - Implements task              │
-│  - Runs tests/build/lint        │
-│  - Writes state file            │
-└────────────┬────────────────────┘
-             │
-┌────────────▼────────────────────┐
-│  State & Logs                   │
-│  (.claudefather/)               │
-│  - state/{id}.json              │
-│  - logs/{id}.log                │
-└─────────────────────────────────┘
+     ┌───────┴────────┐
+     │                │
+┌────▼─────┐    ┌────▼─────┐
+│ Worktree │    │ Worktree │  (Multiple parallel worktrees)
+│  Task 1  │    │  Task 2  │
+└────┬─────┘    └────┬─────┘
+     │                │
+┌────▼──────────────▼─────┐
+│  Claude Agents SDK      │
+│  - Makes API calls      │
+│  - Executes tasks       │
+│  - Runs tests/build     │
+│  - Writes state file    │
+└────┬────────────────────┘
+     │
+┌────▼──────────────────────────┐
+│  File Sync & State            │
+│  - Sync from worktree         │
+│  - Main project               │
+│  (.claudefather/)             │
+│  - state/{id}.json            │
+│  - logs/{id}.log              │
+│  - tasks/{id}.md (if created) │
+└───────────────────────────────┘
 ```
 
 ### Execution Flow
 
 1. **Load Tasks**: Reads markdown files from `.claudefather/tasks/` directory (sorted numerically)
-2. **Check State**: Loads any previous state for the task
-3. **Build Prompt**: Creates prompt with system instructions + task + retry feedback
-4. **Spawn Claude**: Uses Claude Agents SDK to execute task via API (1-hour timeout)
-5. **Read State**: Reads state file Claude wrote at `.claudefather/state/{task-id}.json`
-6. **Validate**: Checks if outputs look real (pattern matching for hallucinations)
-7. **Handle Result**:
-   - ✅ Valid → Mark complete, move to next task
-   - ❌ Invalid → Retry with feedback (max 3 attempts)
-   - ⚠️ Blocker → Stop for human review
+2. **Create Worktree**: Creates isolated git worktree for task with feature branch
+3. **Check State**: Loads any previous state for the task
+4. **Build Prompt**: Creates prompt with system instructions + task + retry feedback
+5. **Spawn Claude**: Uses Claude Agents SDK to execute task in worktree (1-hour timeout)
+6. **Read State**: Reads state file Claude wrote at `.claudefather/state/{task-id}.json` in worktree
+7. **Validate**: Checks if outputs look real (pattern matching for hallucinations)
+8. **Sync Files**: Copies task files, state, and logs from worktree back to main project
+9. **Clean Worktree**: Removes git worktree after files are synced
+10. **Handle Result**:
+    - ✅ Valid → Mark complete, move to next task
+    - ❌ Invalid → Retry with feedback (max 3 attempts)
+    - ⚠️ Blocker → Stop for human review
+
+**Parallel Execution**: Multiple tasks run concurrently in separate worktrees (configurable via `--parallel` flag)
 
 ### State File Format
 
@@ -283,11 +302,15 @@ Claude writes `.claudefather/state/{task-id}.json`:
 Run Claudefather and process all tasks:
 
 ```bash
-# Run tasks in the current project
+# Run tasks in the current project (5 parallel workers by default)
 pnpm claudefather start
 
 # Run tasks in a different project directory
 pnpm claudefather start --project-dir /path/to/project
+
+# Run with custom parallel worker count
+pnpm claudefather start --parallel 10
+pnpm claudefather start --project-dir /path/to/project --parallel 3
 ```
 
 #### Project Directory
@@ -301,6 +324,23 @@ Claudefather always uses a consistent directory structure:
 - **Logs and State**: Always in `.claudefather/logs/` and `.claudefather/state/`
 
 This ensures consistent and predictable task management across different projects.
+
+#### Parallel Execution with Worktrees
+
+Claudefather uses **git worktrees** to run multiple tasks in parallel. Each task gets its own isolated worktree with a dedicated feature branch, allowing true concurrent execution without conflicts.
+
+**How it works:**
+- Default: 5 parallel tasks (configurable with `--parallel`)
+- Each task runs in `.claudefather/worktrees/{task-id}/`
+- After completion, files are synced back to the main project
+- Worktrees are automatically cleaned up
+- Safe for monorepos and large projects
+
+**Benefits:**
+- Tasks don't interfere with each other
+- Faster total execution time
+- Cleaner git workflow (each task has its own branch)
+- Files automatically synchronized back to main project
 
 ### status
 
@@ -415,6 +455,8 @@ Please address these issues and try again.
 │   ├── prompt-builder.ts     # Build prompts with context
 │   ├── validators.ts         # Validate outputs
 │   ├── config-loader.ts      # Load configuration
+│   ├── worktree-manager.ts   # Manage git worktrees
+│   ├── concurrency-manager.ts# Handle parallel execution
 │   ├── schemas.ts            # Zod schemas
 │   └── types.ts              # TypeScript types
 ├── .claudefather/            # Working directory (gitignored)
@@ -422,6 +464,7 @@ Please address these issues and try again.
 │   ├── templates/            # System prompt templates
 │   ├── state/                # Per-task state JSON files
 │   ├── logs/                 # Full session logs
+│   ├── worktrees/            # Git worktrees for parallel execution
 │   ├── .claudefatherrc       # Configuration file (JSON)
 │   └── .env                  # Environment variables
 ├── package.json
@@ -430,7 +473,7 @@ Please address these issues and try again.
 └── README.md
 ```
 
-**Note**: When using `--project-dir`, the `.claudefather/` directory is created in the specified project directory.
+**Note**: When using `--project-dir`, the `.claudefather/` directory is created in the specified project directory. Worktrees are created in `.claudefather/worktrees/{task-id}/` but are automatically cleaned up after task completion.
 
 ### Configuration Files
 

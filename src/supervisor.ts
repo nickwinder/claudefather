@@ -5,6 +5,8 @@ import { ClaudeRunner } from './claude-runner.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { OutputValidator } from './validators.js'
 import { ConfigLoader, type Config } from './config-loader.js'
+import { WorktreeManager } from './worktree-manager.js'
+import { ConcurrencyManager } from './concurrency-manager.js'
 import chalk from 'chalk'
 import ora from 'ora'
 import { resolve } from 'path'
@@ -19,14 +21,20 @@ export class AISupervisor {
   private promptBuilder: PromptBuilder
   private projectDir: string
   private config: Config
+  private worktreeManager: WorktreeManager
+  private concurrencyManager: ConcurrencyManager
+  private parallelCount: number
 
-  constructor(projectDir: string = '.') {
+  constructor(projectDir: string = '.', parallelCount: number = 5) {
     const resolvedProjectDir = resolve(projectDir)
     this.projectDir = resolvedProjectDir
     this.taskLoader = new TaskLoader(resolvedProjectDir)
     this.stateManager = new StateManager(resolvedProjectDir)
     this.claudeRunner = new ClaudeRunner(this.stateManager, resolvedProjectDir)
     this.promptBuilder = new PromptBuilder(resolvedProjectDir)
+    this.worktreeManager = new WorktreeManager(resolvedProjectDir)
+    this.concurrencyManager = new ConcurrencyManager(parallelCount)
+    this.parallelCount = parallelCount
 
     // Load config from .claudefatherrc and .env
     const configLoader = new ConfigLoader(resolvedProjectDir)
@@ -46,11 +54,18 @@ export class AISupervisor {
       return
     }
 
-    console.log(chalk.blue(`Found ${tasks.length} task(s)\n`))
+    console.log(
+      chalk.blue(`Found ${tasks.length} task(s) (running ${this.parallelCount} in parallel)\n`)
+    )
 
-    for (const task of tasks) {
-      await this.processTask(task)
-    }
+    // Clean up stale worktrees before starting
+    await this.worktreeManager.pruneStaleWorktrees()
+
+    // Always use parallel execution with worktrees
+    await Promise.all(tasks.map((task) => this.concurrencyManager.run(() => this.processTask(task))))
+
+    // Clean up worktrees after all tasks complete
+    await this.worktreeManager.pruneStaleWorktrees()
 
     console.log(chalk.bold.green('\n✅ Supervisor completed\n'))
   }
@@ -79,11 +94,28 @@ export class AISupervisor {
       return
     }
 
-    // Execute task with retries
-    const maxAttempts = 3
-    let lastValidation: ValidationResult | undefined
+    // Create worktree for each task
+    let worktreePath: string | undefined
+    let claudeRunner = this.claudeRunner
 
-    while (!state || (state.status !== 'VERIFIED_COMPLETE' && !this.isBlocker(state.status))) {
+    try {
+      worktreePath = await this.worktreeManager.createWorktree(
+        task.id,
+        this.config.branchPrefix
+      )
+      claudeRunner = new ClaudeRunner(this.stateManager, this.projectDir, 60 * 60 * 1000, worktreePath)
+      console.log(chalk.gray(`   Worktree: ${worktreePath}`))
+    } catch (error) {
+      console.log(chalk.red(`  ❌ Failed to create worktree: ${error instanceof Error ? error.message : String(error)}`))
+      return
+    }
+
+    try {
+      // Execute task with retries
+      const maxAttempts = 3
+      let lastValidation: ValidationResult | undefined
+
+      while (!state || (state.status !== 'VERIFIED_COMPLETE' && !this.isBlocker(state.status))) {
       const attemptNum = (state?.attemptNumber ?? 0) + 1
 
       if (attemptNum > maxAttempts) {
@@ -124,7 +156,7 @@ export class AISupervisor {
         )
 
         // Execute Claude Code (output streams in real-time)
-        state = await this.claudeRunner.run(task.id, prompt)
+        state = await claudeRunner.run(task.id, prompt)
 
         // Validate outputs
         const spinner2 = ora('Validating outputs...').start()
@@ -206,6 +238,27 @@ export class AISupervisor {
         // Ensure we're on the original branch before continuing
         await this.ensureOriginalBranch(state)
         return
+      }
+    }
+    } finally {
+      // Sync files from worktree back to main project before cleanup
+      if (worktreePath) {
+        try {
+          await this.worktreeManager.syncFromWorktree(task.id)
+          console.log(chalk.gray(`   Files synced from worktree`))
+        } catch (error) {
+          console.log(chalk.yellow(`   ⚠️  Warning: Failed to sync files from worktree: ${error instanceof Error ? error.message : String(error)}`))
+        }
+      }
+
+      // Clean up worktree after task completion
+      if (worktreePath) {
+        try {
+          await this.worktreeManager.removeWorktree(task.id)
+          console.log(chalk.gray(`   Worktree cleaned up`))
+        } catch (error) {
+          console.log(chalk.yellow(`   ⚠️  Warning: Failed to clean up worktree: ${error instanceof Error ? error.message : String(error)}`))
+        }
       }
     }
   }

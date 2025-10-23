@@ -26,12 +26,19 @@ export class ClaudeRunner {
   private stateManager: StateManager;
   private timeoutMs: number;
   private projectDir: string;
+  private worktreeDir?: string; // Optional worktree directory for parallel execution
 
-  constructor(stateManager: StateManager, projectDir: string = '.', timeoutMs: number = 60 * 60 * 1000) {
+  constructor(
+    stateManager: StateManager,
+    projectDir: string = '.',
+    timeoutMs: number = 60 * 60 * 1000,
+    worktreeDir?: string
+  ) {
     // 1 hour default timeout
     this.stateManager = stateManager;
     this.projectDir = projectDir;
     this.timeoutMs = timeoutMs;
+    this.worktreeDir = worktreeDir;
   }
 
   /**
@@ -52,12 +59,15 @@ export class ClaudeRunner {
     );
 
     try {
+      // Use worktree directory if provided, otherwise use project directory
+      const cwd = this.worktreeDir || this.projectDir;
+
       // Create the query using Claude Agent SDK
       const result = query({
         prompt,
         options: {
           model: 'claude-sonnet-4-5-20250929',
-          cwd: this.projectDir,
+          cwd,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           permissionMode: 'bypassPermissions',
           settingSources: ['user', 'local', 'project'], // Load all settings like CLI does

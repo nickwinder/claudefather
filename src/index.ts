@@ -18,11 +18,19 @@ program.name('claudefather').description('Lightweight AI orchestrator for managi
 program
   .command('start')
   .description('Start the supervisor and process all tasks')
-  .action(async (_options, command) => {
+  .option('-p, --parallel <number>', 'Number of parallel tasks to run (default: 5, use git worktrees)', '5')
+  .action(async (options, command) => {
     try {
       const globalOpts = command.parent.opts();
       const projectDir = globalOpts.projectDir || '.';
-      const supervisor = new AISupervisor(projectDir);
+      const parallelCount = parseInt(options.parallel, 10) || 1;
+
+      if (parallelCount < 1) {
+        console.error(chalk.red('Error: --parallel must be at least 1'));
+        process.exit(1);
+      }
+
+      const supervisor = new AISupervisor(projectDir, parallelCount);
       await supervisor.run();
     } catch (error) {
       console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);

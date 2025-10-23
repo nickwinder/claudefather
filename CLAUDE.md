@@ -53,15 +53,30 @@ Task Files (.claudefather/tasks/.md)
 TaskLoader (parses front matter)
     ↓
 Supervisor (main orchestrator)
+    ├→ WorktreeManager (creates isolated git worktrees)
+    ├→ ConcurrencyManager (handles parallel execution)
     ├→ StateManager (loads/saves JSON state)
     ├→ PromptBuilder (creates Claude prompts)
-    ├→ ClaudeRunner (spawns `claude` CLI process)
+    ├→ ClaudeRunner (spawns `claude` CLI process in worktree)
     └→ OutputValidator (detects hallucinations)
+    ↓
+File Sync (copies files from worktree back to main project)
+    ↓
+Worktree Cleanup (removes isolated git worktree)
     ↓
 State Files (.claudefather/state/*.json)
 Logs (.claudefather/logs/*.log)
 Templates (.claudefather/templates/*.md)
 ```
+
+### Parallel Execution
+
+Claudefather runs multiple tasks concurrently using **git worktrees**:
+- Each task gets its own isolated worktree with a feature branch
+- Default: 5 parallel tasks (configurable with `--parallel` flag)
+- Tasks don't interfere with each other's git state
+- Files are synced back to main project after completion
+- Worktrees are automatically cleaned up
 
 ### Key Modules
 
@@ -69,13 +84,17 @@ Templates (.claudefather/templates/*.md)
 
 2. **StateManager** (`src/state-manager.ts`) - Persists task state to `.claudefather/state/{task-id}.json`. Loads previous execution state to resume or retry. Handles state validation with Zod schemas.
 
-3. **ClaudeRunner** (`src/claude-runner.ts`) - Spawns Claude Code CLI as a subprocess with 1-hour timeout. Passes prompt via stdin. Captures full stdout/stderr output. Handles process cleanup.
+3. **WorktreeManager** (`src/worktree-manager.ts`) - Creates and manages git worktrees for isolated task execution. Creates feature branches for each task. Syncs `.claudefather/` files from worktree back to main project. Cleans up worktrees after task completion.
 
-4. **PromptBuilder** (`src/prompt-builder.ts`) - Constructs the prompt sent to Claude, including system instructions from `.claudefather/templates/system-prompt.md`, the task description, and retry feedback from previous attempts if validation failed.
+4. **ClaudeRunner** (`src/claude-runner.ts`) - Spawns Claude Code CLI as a subprocess with 1-hour timeout. Passes prompt via stdin. Captures full stdout/stderr output. Handles process cleanup. Works within worktree context when provided.
 
-5. **OutputValidator** (`src/validators.ts`) - Validates Claude's output state file for consistency. Validates git state (commit SHA format, branch consistency). Returns specific validation issues that are fed back to Claude on retry.
+5. **PromptBuilder** (`src/prompt-builder.ts`) - Constructs the prompt sent to Claude, including system instructions from `.claudefather/templates/system-prompt.md`, the task description, and retry feedback from previous attempts if validation failed.
 
-6. **Supervisor** (`src/supervisor.ts`) - Main orchestration logic. Loads tasks, processes each sequentially, manages retry loop (max 3 attempts). Stops at blockers (human intervention needed). Marks tasks as complete when validation passes.
+6. **OutputValidator** (`src/validators.ts`) - Validates Claude's output state file for consistency. Validates git state (commit SHA format, branch consistency). Returns specific validation issues that are fed back to Claude on retry.
+
+7. **ConcurrencyManager** (`src/concurrency-manager.ts`) - Manages parallel task execution. Limits concurrent tasks to configurable count (default: 5). Queues and schedules tasks for execution.
+
+8. **Supervisor** (`src/supervisor.ts`) - Main orchestration logic. Loads tasks, creates worktrees, processes tasks in parallel via ConcurrencyManager, syncs files from worktrees, manages retry loop (max 3 attempts). Stops at blockers (human intervention needed). Marks tasks as complete when validation passes.
 
 ### Task State Lifecycle
 
@@ -156,27 +175,39 @@ All directories are encapsulated under `.claudefather/` (gitignored):
 project-dir/
 └── .claudefather/               # All supervisor working directories (gitignored)
     ├── tasks/                   # Task markdown files (e.g., 001-task.md)
-    ├── state/                   # Task state JSON files
-    ├── logs/                    # Task execution logs
-    └── templates/               # System prompt templates
+    ├── state/                   # Task state JSON files (synced from worktrees)
+    ├── logs/                    # Task execution logs (synced from worktrees)
+    ├── templates/               # System prompt templates
+    └── worktrees/               # Git worktrees for parallel execution
+        ├── {task-id}/           # Isolated worktree for each task
+        │   └── .claudefather/   # Task's local .claudefather (synced back to main)
+        └── ...                  # One worktree per parallel task
 ```
+
+**Note**: Worktrees are temporary and automatically cleaned up after each task completes. The `.claudefather/` directories created within worktrees are synced back to the main project before cleanup, ensuring no data is lost.
 
 ### Fixed Paths
 
 - **Project Directory**: Configurable via `--project-dir` flag, defaults to `.`
 - **Task Directory**: Always `{project-dir}/.claudefather/tasks/` - Contains markdown task files
-- **State Directory**: Always `{project-dir}/.claudefather/state/` - Task state files
-- **Logs Directory**: Always `{project-dir}/.claudefather/logs/` - Execution logs
+- **State Directory**: Always `{project-dir}/.claudefather/state/` - Task state files (synced from worktrees)
+- **Logs Directory**: Always `{project-dir}/.claudefather/logs/` - Execution logs (synced from worktrees)
 - **Templates Directory**: Always `{project-dir}/.claudefather/templates/` - System prompts
+- **Worktrees Directory**: Always `{project-dir}/.claudefather/worktrees/` - Git worktrees for parallel task execution
+- **Worktree Paths**: Each task gets `{project-dir}/.claudefather/worktrees/{task-id}/` with its own feature branch
 
 ### Usage
 
 ```bash
-# Default: uses current directory as project
+# Default: uses current directory as project (5 parallel workers)
 pnpm claudefather start
 
 # Specify a different project directory
 pnpm claudefather start --project-dir /path/to/project
+
+# Control parallel execution (default: 5)
+pnpm claudefather start --parallel 10
+pnpm claudefather start --project-dir /path/to/project --parallel 3
 
 # Other commands also support --project-dir
 pnpm claudefather status --project-dir /path/to/project
@@ -185,7 +216,9 @@ pnpm claudefather create "Task" --project-dir /path/to/project
 
 ### Working Directory
 
-When Claude Code runs, its working directory (`cwd`) is set to `{project-dir}` so all file operations happen in the correct context.
+When Claude Code runs, its working directory (`cwd`) is set to the **worktree root** for that task (e.g., `{project-dir}/.claudefather/worktrees/{task-id}/`), not the main project directory. This ensures file operations happen in the isolated task context.
+
+**Important**: The worktree has the same git history and structure as the main project, so paths are identical.
 
 ## TypeScript Configuration
 
@@ -276,14 +309,18 @@ All code uses TypeScript strict mode. No existing test suite yet (this is for a 
 
 ## Git Workflow
 
-- Claude checks the current branch before starting (e.g., `main`, `develop`)
-- Tasks run on feature branches named `feature/{task-id}`
-- Claude commits work to the feature branch
-- **Claude switches back to the original branch** after committing
+- **Worktree Isolation**: Each task runs in its own git worktree with a dedicated feature branch
+- Claude checks the current branch in the worktree before starting
+- Tasks run on feature branches named `feature/{task-id}` (or `{prefix}/{task-id}` with custom branch prefix)
+- Claude commits work to the feature branch within the worktree
+- **Claude switches back to the original branch** after committing (within the worktree)
 - **Claude does NOT push branches** - supervisor manages that
+- **File Synchronization**: After Claude completes, supervisor syncs `.claudefather/` files from worktree to main project
+- **Worktree Cleanup**: Supervisor removes the worktree after files are synced
 - State files track git status (including `originalBranch`) for verification
 - The `branch` field in gitStatus should reflect the current branch (original branch after switching back)
 - If `MERGE_CONFLICT_DETECTED`, human must resolve and reset
+- **Multiple Worktrees**: Multiple worktrees can exist simultaneously without interfering with each other or the main project
 
 ## Debugging Tips
 
